@@ -2,25 +2,36 @@ package replication
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/jackc/pgx"
 	log "github.com/sirupsen/logrus"
 )
 
-func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName string, restartLSN uint64) error {
+type WALPayload struct {
+	NextLSN string `json:"nextlsn"`
+}
+
+func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName string, state *State) error {
 	// Options for wal2json (as documented here https://github.com/eulerto/wal2json#parameters)
-	wal2JsonPluginOptions := []string{`"include-lsn" 'true'`, `"pretty-print" 'false'`}
+	wal2JsonPluginOptions := []string{
+		// Include "nextlsn" field in payload so we can update our state
+		`"include-lsn" 'true'`,
+		// Don't indent the JSON payload
+		`"pretty-print" 'false'`,
+		// Include timestamp and column OIDs in addition to detailed type names
+		`"include-timestamp" 'true'`,
+		`"include-type-oids" 'true'`,
+	}
 
 	// Start replication on replication slot
-	err := replConn.StartReplication(slotName, restartLSN, -1, wal2JsonPluginOptions...)
+	err := replConn.StartReplication(slotName, state.InitialRestartLSN, -1, wal2JsonPluginOptions...)
 	if err != nil {
 		return fmt.Errorf("could not start replication: %w", err)
 	}
 
-	currentLSN := &restartLSN
-
 	go func() {
-		err := sendReplicationHeartbeat(ctx, replConn, currentLSN)
+		err := sendReplicationHeartbeat(ctx, replConn, state)
 		if err != nil {
 			log.Fatalf("Could not send replication heartbeat: %s", err.Error())
 		}
@@ -46,7 +57,7 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 
 			// Handle server heartbeat reply requests
 			if serverHeartbeat.ReplyRequested == 1 {
-				err = sendStandbyStatus(replConn, currentLSN)
+				err = sendStandbyStatus(replConn, state)
 				if err != nil {
 					return fmt.Errorf("could not reply heartbeat requested by server: %w", err)
 				}
@@ -58,6 +69,26 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 			continue
 		}
 
-		log.Infof("Got change: %s", string(walMessage.WalData))
+		log.Infof("Got WAL message: %s", walMessage.String())
+
+		var payload WALPayload
+		err = json.Unmarshal(walMessage.WalData, &payload)
+		if err != nil {
+			return fmt.Errorf("could not unmarshal wal payload: %w", err)
+		}
+
+		log.Tracef("Will update LSN of replication slot to %q", payload.NextLSN)
+
+		updatedLSN, err := pgx.ParseLSN(payload.NextLSN)
+		if err != nil {
+			return fmt.Errorf("could not parse wal payload lsn: %w", err)
+		}
+
+		state.CurrentLSN = updatedLSN
+
+		err = sendStandbyStatus(replConn, state)
+		if err != nil {
+			return fmt.Errorf("could not refresh lsn after wal message: %w", err)
+		}
 	}
 }

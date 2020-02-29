@@ -41,7 +41,7 @@ func main() {
 
 	log.Infof("Connected to Postgres instance, dropping existing replication slots")
 
-	lsn, slotName, err := replication.Setup(pgConn, replConn)
+	slotName, state, err := replication.Setup(pgConn, replConn)
 	if err != nil {
 		log.Fatalf("Could not setup Postgres replication: %s", err.Error())
 	}
@@ -52,7 +52,7 @@ func main() {
 
 	internalServer := server.LaunchInternalServer(cancel)
 
-	err = replication.StreamChanges(streamCtx, replConn, slotName, lsn)
+	err = replication.StreamChanges(streamCtx, replConn, slotName, state)
 	if err != nil {
 		log.Errorf("Could not stream changes: %s", err.Error())
 	}

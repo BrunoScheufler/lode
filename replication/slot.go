@@ -11,11 +11,16 @@ import (
 const SlotPrefix string = "lode"
 const StandbyStatusInterval = 10 * time.Second
 
-func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (uint64, string, error) {
+type State struct {
+	CurrentLSN        uint64
+	InitialRestartLSN uint64
+}
+
+func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, error) {
 	// Drop all existing lode replication slots
 	err := dropExistingReplicationSlots(pgConn, replConn)
 	if err != nil {
-		return 0, "", fmt.Errorf("could not drop existing replication slots: %w", err)
+		return "", nil, fmt.Errorf("could not drop existing replication slots: %w", err)
 	}
 
 	log.Infof("Dropped existing replication slots!")
@@ -24,7 +29,7 @@ func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (uint64, string, err
 	slotName := fmt.Sprintf("%s_main", SlotPrefix)
 	lsn, snapshotName, err := initializeReplicationSlot(slotName, replConn)
 	if err != nil {
-		return 0, "", fmt.Errorf("could not initialize replication slot: %w", err)
+		return "", nil, fmt.Errorf("could not initialize replication slot: %w", err)
 	}
 
 	log.WithFields(log.Fields{
@@ -33,12 +38,15 @@ func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (uint64, string, err
 		"slotName":     slotName,
 	}).Infof("Created wal2json replication slot")
 
-	return lsn, slotName, nil
+	return slotName, &State{
+		CurrentLSN:        lsn,
+		InitialRestartLSN: lsn,
+	}, nil
 }
 
 func dropExistingReplicationSlots(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) error {
 	// Fetch all replication slots that contain prefix
-	rows, err := pgConn.Query("SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE $1;", fmt.Sprintf("%s%%", ReplicationSlotPrefix))
+	rows, err := pgConn.Query("SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE $1;", fmt.Sprintf("%s%%", SlotPrefix))
 	if err != nil {
 		return fmt.Errorf("could not query for replication slots: %w", err)
 	}
@@ -77,14 +85,14 @@ func initializeReplicationSlot(slotName string, replConn *pgx.ReplicationConn) (
 
 // send Postgres standby status (heartbeat) to keep
 // streaming changes using replication connection
-func sendReplicationHeartbeat(ctx context.Context, replConn *pgx.ReplicationConn, lsn *uint64) error {
+func sendReplicationHeartbeat(ctx context.Context, replConn *pgx.ReplicationConn, state *State) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(StandbyStatusInterval):
 			// send standby status with current lsn
-			err := sendStandbyStatus(replConn, lsn)
+			err := sendStandbyStatus(replConn, state)
 			if err != nil {
 				return fmt.Errorf("could not send standby status: %w", err)
 			}
@@ -93,12 +101,16 @@ func sendReplicationHeartbeat(ctx context.Context, replConn *pgx.ReplicationConn
 }
 
 // sendStandbyStatus sends a StandbyStatus object with the current lsn value to the server
-func sendStandbyStatus(replConn *pgx.ReplicationConn, lsn *uint64) error {
+func sendStandbyStatus(replConn *pgx.ReplicationConn, state *State) error {
+	currentLsn := state.CurrentLSN
+
 	// Create standby status form restart LSN
-	standbyStatus, err := pgx.NewStandbyStatus(*lsn)
+	standbyStatus, err := pgx.NewStandbyStatus(currentLsn)
 	if err != nil {
 		return fmt.Errorf("could not create StandbyStatus: %w", err)
 	}
+
+	log.Tracef("Sending standby status with LSN %q", pgx.FormatLSN(currentLsn))
 
 	// Save standby status (send heartbeat)
 	err = replConn.SendStandbyStatus(standbyStatus)
