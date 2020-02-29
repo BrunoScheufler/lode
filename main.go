@@ -9,14 +9,26 @@ import (
 )
 
 type Configuration struct {
-	LogLevel         logrus.Level
+	// Postgres connection string to use
 	ConnectionString string
+
+	// Postgres replication slot name override
+	// Will default to "lode_main"
+	SlotName string
+
+	// Pass existing logger instance
+	Logger *logrus.Logger
+
+	// Pass log level to use when logger should be created
+	LogLevel logrus.Level
 }
 
 func Create(configuration Configuration) (<-chan int, context.CancelFunc, error) {
-	logger := logrus.New()
-
-	logger.SetLevel(configuration.LogLevel)
+	logger := configuration.Logger
+	if logger == nil {
+		logger = logrus.New()
+		logger.SetLevel(configuration.LogLevel)
+	}
 
 	// Parse connection string to config
 	parsedConnectConfig, err := pgx.ParseConnectionString(configuration.ConnectionString)
@@ -42,7 +54,7 @@ func Create(configuration Configuration) (<-chan int, context.CancelFunc, error)
 
 	logger.Infof("Connected to Postgres instance, setting up replication")
 
-	slotName, state, err := replication.Setup(logger, pgConn, replConn)
+	slotName, state, err := replication.Setup(logger, pgConn, replConn, configuration.SlotName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not setup Postgres replication: %w", err)
 	}

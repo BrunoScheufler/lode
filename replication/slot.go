@@ -15,8 +15,11 @@ type State struct {
 	CurrentLSN uint64
 }
 
-func Setup(logger *logrus.Logger, pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, error) {
+func Setup(logger *logrus.Logger, pgConn *pgx.Conn, replConn *pgx.ReplicationConn, slotNameOverride string) (string, *State, error) {
 	slotName := fmt.Sprintf("%s_main", SlotPrefix)
+	if slotNameOverride != "" {
+		slotName = slotNameOverride
+	}
 
 	initialLSN, err := fetchReplicationSlot(pgConn, slotName)
 	if err != nil {
