@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jackc/pgx"
 	log "github.com/sirupsen/logrus"
+	"net/http"
 	"time"
 )
 
@@ -67,12 +68,36 @@ func main() {
 	}).Infof("Created wal2json replication slot")
 
 	// Create root context
-	ctx := context.Background()
+	rootCtx := context.Background()
+	streamCtx, cancel := context.WithCancel(rootCtx)
 
-	err = streamChanges(ctx, replConn, slotName, lsn)
+	server := http.Server{
+		// TODO Make dynamic
+		Addr: ":8080",
+	}
+
+	http.HandleFunc("/shutdown", func(writer http.ResponseWriter, request *http.Request) {
+		cancel()
+		writer.WriteHeader(http.StatusOK)
+		_, _ = writer.Write([]byte("OK"))
+	})
+
+	go func() {
+		err = server.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			log.Errorf("Could not run server: %s", err.Error())
+			cancel()
+		}
+	}()
+
+	err = streamChanges(streamCtx, replConn, slotName, lsn)
 	if err != nil {
-		log.Fatalf("Could not stream changes: %s", err.Error())
-		return
+		log.Errorf("Could not stream changes: %s", err.Error())
+	}
+
+	err = server.Shutdown(rootCtx)
+	if err != nil && err != http.ErrServerClosed {
+		log.Errorf("Could not shutdown server: %s", err.Error())
 	}
 
 	// Shut down both connections gracefully before exiting
