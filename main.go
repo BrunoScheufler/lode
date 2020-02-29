@@ -1,99 +1,79 @@
-package main
+package lode
 
 import (
 	"context"
+	"fmt"
 	"github.com/brunoscheufler/lode/replication"
 	"github.com/jackc/pgx"
-	log "github.com/sirupsen/logrus"
-	"net/http"
+	"github.com/sirupsen/logrus"
 )
 
-func main() {
-	// TODO Make dynamic
-	log.SetLevel(log.TraceLevel)
+type Configuration struct {
+	LogLevel         logrus.Level
+	ConnectionString string
+}
+
+func Create(configuration Configuration) (<-chan int, context.CancelFunc, error) {
+	logger := logrus.New()
+
+	logger.SetLevel(configuration.LogLevel)
 
 	// Parse connection string to config
-	// TODO Make connection string dynamic
-	parsedConnectConfig, err := pgx.ParseConnectionString("postgresql://postgres:password@localhost:5432/postgres")
+	parsedConnectConfig, err := pgx.ParseConnectionString(configuration.ConnectionString)
 	if err != nil {
-		log.Fatalf("Could not parse connection string: %s", err.Error())
-		return
+		return nil, nil, fmt.Errorf("could not parse connection string: %w", err)
 	}
 
 	// Create regular connection
 	pgConn, err := pgx.Connect(parsedConnectConfig)
 	if err != nil {
-		log.Fatalf("Could not establish regular Postgres connection: %s", err.Error())
-		return
+		return nil, nil, fmt.Errorf("could not establish regular Postgres connection: %w", err)
 	}
 
-	log.Debugf("Established regular pg connection")
+	logger.Debugf("Established regular pg connection")
 
 	// Create replication connection
 	replConn, err := pgx.ReplicationConnect(parsedConnectConfig)
 	if err != nil {
-		log.Fatalf("Could not establish replication connection: %s", err.Error())
-		return
+		return nil, nil, fmt.Errorf("could not establish replication connection: %w", err)
 	}
 
-	log.Debugf("Established replication pg connection")
+	logger.Debugf("Established replication pg connection")
 
-	log.Infof("Connected to Postgres instance, setting up replication")
+	logger.Infof("Connected to Postgres instance, setting up replication")
 
-	slotName, state, err := replication.Setup(pgConn, replConn)
+	slotName, state, err := replication.Setup(logger, pgConn, replConn)
 	if err != nil {
-		log.Fatalf("Could not setup Postgres replication: %s", err.Error())
+		return nil, nil, fmt.Errorf("could not setup Postgres replication: %w", err)
 	}
+
+	done := make(chan int)
 
 	// Create root context
 	rootCtx := context.Background()
 	streamCtx, cancel := context.WithCancel(rootCtx)
 
-	server := &http.Server{
-		// TODO Make dynamic
-		Addr: ":8080",
-	}
-
-	http.HandleFunc("/shutdown", func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost {
-			writer.WriteHeader(http.StatusMethodNotAllowed)
-			_, _ = writer.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
-			return
-		}
-
-		cancel()
-		writer.WriteHeader(http.StatusOK)
-		_, _ = writer.Write([]byte(http.StatusText(http.StatusOK)))
-	})
-
 	go func() {
-		err := replication.StreamChanges(streamCtx, replConn, slotName, state)
+		err := replication.StreamChanges(logger, streamCtx, replConn, slotName, state)
 		if err != nil {
-			log.Errorf("Could not stream changes: %s", err.Error())
+			logger.Errorf("Could not stream changes: %s", err.Error())
 		}
 
-		err = server.Shutdown(rootCtx)
-		if err != nil && err != http.ErrServerClosed {
-			log.Errorf("Could not shutdown server: %s", err.Error())
+		// Shut down both connections gracefully before exiting
+		err = replConn.Close()
+		if err != nil {
+			logger.Errorf("Could not close replication connection: %s", err.Error())
 		}
+
+		err = pgConn.Close()
+		if err != nil {
+			logger.Errorf("Could not close regular pg connection: %s", err.Error())
+		}
+
+		logger.Infof("Done!")
+
+		done <- 0
 	}()
 
-	err = server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		log.Errorf("Could not run server: %s", err.Error())
-		cancel()
-	}
-
-	// Shut down both connections gracefully before exiting
-	err = replConn.Close()
-	if err != nil {
-		log.Errorf("Could not close replication connection: %s", err.Error())
-	}
-
-	err = pgConn.Close()
-	if err != nil {
-		log.Error("Could not close regular pg connection: %s", err.Error())
-	}
-
-	log.Infof("Done!")
+	return done, cancel, nil
 }

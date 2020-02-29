@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"time"
 )
 
@@ -15,7 +15,7 @@ type State struct {
 	CurrentLSN uint64
 }
 
-func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, error) {
+func Setup(logger *logrus.Logger, pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, error) {
 	slotName := fmt.Sprintf("%s_main", SlotPrefix)
 
 	initialLSN, err := fetchReplicationSlot(pgConn, slotName)
@@ -30,13 +30,13 @@ func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, err
 			return "", nil, fmt.Errorf("could not initialize replication slot: %w", err)
 		}
 
-		log.WithFields(log.Fields{
+		logger.WithFields(logrus.Fields{
 			"lsn":      initialLSN,
 			"slotName": slotName,
 		}).Infof("Created wal2json replication slot")
 	}
 
-	log.WithFields(log.Fields{
+	logger.WithFields(logrus.Fields{
 		"lsn":      pgx.FormatLSN(initialLSN),
 		"slotName": slotName,
 	}).Infof("Set up replication slot")
@@ -88,14 +88,14 @@ func fetchReplicationSlot(pgConn *pgx.Conn, slotName string) (uint64, error) {
 
 // send Postgres standby status (heartbeat) to keep
 // streaming changes using replication connection
-func sendReplicationHeartbeat(ctx context.Context, replConn *pgx.ReplicationConn, state *State) error {
+func sendReplicationHeartbeat(logger *logrus.Logger, ctx context.Context, replConn *pgx.ReplicationConn, state *State) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-time.After(StandbyStatusInterval):
 			// send standby status with current lsn
-			err := sendStandbyStatus(replConn, state)
+			err := sendStandbyStatus(logger, replConn, state)
 			if err != nil {
 				return fmt.Errorf("could not send standby status: %w", err)
 			}
@@ -104,7 +104,7 @@ func sendReplicationHeartbeat(ctx context.Context, replConn *pgx.ReplicationConn
 }
 
 // sendStandbyStatus sends a StandbyStatus object with the current lsn value to the server
-func sendStandbyStatus(replConn *pgx.ReplicationConn, state *State) error {
+func sendStandbyStatus(logger *logrus.Logger, replConn *pgx.ReplicationConn, state *State) error {
 	currentLsn := state.CurrentLSN
 
 	// Create standby status form restart LSN
@@ -113,7 +113,7 @@ func sendStandbyStatus(replConn *pgx.ReplicationConn, state *State) error {
 		return fmt.Errorf("could not create StandbyStatus: %w", err)
 	}
 
-	log.Tracef("Sending standby status with LSN %q", pgx.FormatLSN(currentLsn))
+	logger.Tracef("Sending standby status with LSN %q", pgx.FormatLSN(currentLsn))
 
 	// Save standby status (send heartbeat)
 	err = replConn.SendStandbyStatus(standbyStatus)

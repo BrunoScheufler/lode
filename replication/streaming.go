@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/jackc/pgx"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 type WALPayload struct {
 	NextLSN string `json:"nextlsn"`
 }
 
-func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName string, state *State) error {
+func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.ReplicationConn, slotName string, state *State) error {
 	// Options for wal2json (as documented here https://github.com/eulerto/wal2json#parameters)
 	wal2JsonPluginOptions := []string{
 		// Include "nextlsn" field in payload so we can update our state
@@ -31,9 +31,10 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 	}
 
 	go func() {
-		err := sendReplicationHeartbeat(ctx, replConn, state)
+		err := sendReplicationHeartbeat(logger, ctx, replConn, state)
 		if err != nil {
-			log.Fatalf("Could not send replication heartbeat: %s", err.Error())
+			// TODO Shut down with error
+			logger.Errorf("Could not send replication heartbeat: %s", err.Error())
 		}
 	}()
 
@@ -53,11 +54,11 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 
 		serverHeartbeat := message.ServerHeartbeat
 		if serverHeartbeat != nil {
-			log.Tracef("Got server heartbeat: %s", serverHeartbeat.String())
+			logger.Tracef("Got server heartbeat: %s", serverHeartbeat.String())
 
 			// Handle server heartbeat reply requests
 			if serverHeartbeat.ReplyRequested == 1 {
-				err = sendStandbyStatus(replConn, state)
+				err = sendStandbyStatus(logger, replConn, state)
 				if err != nil {
 					return fmt.Errorf("could not reply heartbeat requested by server: %w", err)
 				}
@@ -69,7 +70,7 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 			continue
 		}
 
-		log.Infof("Got WAL message: %s", walMessage.String())
+		logger.Infof("Got WAL message: %s", walMessage.String())
 
 		var payload WALPayload
 		err = json.Unmarshal(walMessage.WalData, &payload)
@@ -77,7 +78,7 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 			return fmt.Errorf("could not unmarshal wal payload: %w", err)
 		}
 
-		log.Tracef("Will update LSN of replication slot to %q", payload.NextLSN)
+		logger.Tracef("Will update LSN of replication slot to %q", payload.NextLSN)
 
 		updatedLSN, err := pgx.ParseLSN(payload.NextLSN)
 		if err != nil {
@@ -86,7 +87,7 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 
 		state.CurrentLSN = updatedLSN
 
-		err = sendStandbyStatus(replConn, state)
+		err = sendStandbyStatus(logger, replConn, state)
 		if err != nil {
 			return fmt.Errorf("could not refresh lsn after wal message: %w", err)
 		}
