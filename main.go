@@ -23,7 +23,14 @@ type Configuration struct {
 	LogLevel logrus.Level
 }
 
-func Create(configuration Configuration) (<-chan int, context.CancelFunc, error) {
+// Result type returned by channel on lode exit
+// Can contain streaming error
+type ExitResult struct {
+	// Error returned from streaming goroutine
+	Error error
+}
+
+func Create(configuration Configuration) (<-chan ExitResult, context.CancelFunc, error) {
 	logger := configuration.Logger
 	if logger == nil {
 		logger = logrus.New()
@@ -59,16 +66,17 @@ func Create(configuration Configuration) (<-chan int, context.CancelFunc, error)
 		return nil, nil, fmt.Errorf("could not setup Postgres replication: %w", err)
 	}
 
-	done := make(chan int)
+	done := make(chan ExitResult)
 
 	// Create root context
 	rootCtx := context.Background()
 	streamCtx, cancel := context.WithCancel(rootCtx)
 
+	// Stream changes asynchronously until the context is cancelled or something bad happens
 	go func() {
-		err := replication.StreamChanges(logger, streamCtx, replConn, slotName, state)
-		if err != nil {
-			logger.Errorf("Could not stream changes: %s", err.Error())
+		streamErr := replication.StreamChanges(logger, streamCtx, replConn, slotName, state)
+		if streamErr != nil {
+			logger.Errorf("Could not stream changes: %s", streamErr.Error())
 		}
 
 		// Shut down both connections gracefully before exiting
@@ -82,9 +90,11 @@ func Create(configuration Configuration) (<-chan int, context.CancelFunc, error)
 			logger.Errorf("Could not close regular pg connection: %s", err.Error())
 		}
 
-		logger.Infof("Done!")
+		logger.Trace("Done shutting down lode!")
 
-		done <- 0
+		done <- ExitResult{
+			Error: streamErr,
+		}
 	}()
 
 	return done, cancel, nil

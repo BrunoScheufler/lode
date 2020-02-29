@@ -1,6 +1,8 @@
 package lode
 
 import (
+	"context"
+	"errors"
 	"github.com/sirupsen/logrus"
 	"testing"
 	"time"
@@ -22,5 +24,9 @@ func TestCreate(t *testing.T) {
 		cancel()
 	}()
 
-	<-done
+	result := <-done
+
+	if !errors.Is(result.Error, context.Canceled) {
+		t.Fatalf("received different error than expected: %s", result.Error.Error())
+	}
 }

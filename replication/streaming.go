@@ -38,6 +38,8 @@ func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.Rep
 		}
 	}()
 
+	logger.Tracef("Now streaming changes and waiting for WAL messages")
+
 	for {
 		if ctx.Err() == context.Canceled {
 			return nil
@@ -70,8 +72,11 @@ func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.Rep
 			continue
 		}
 
-		logger.Infof("Got WAL message: %s", walMessage.String())
+		logger.Tracef("Got WAL message: %s", walMessage.String())
 
+		// TODO Add hook support
+
+		// Unmarshal WAL message data to access "nextlsn" field of wal2json
 		var payload WALPayload
 		err = json.Unmarshal(walMessage.WalData, &payload)
 		if err != nil {
@@ -87,6 +92,7 @@ func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.Rep
 
 		state.CurrentLSN = updatedLSN
 
+		// Acknowledge message so Postgres does not resend it eventually
 		err = sendStandbyStatus(logger, replConn, state)
 		if err != nil {
 			return fmt.Errorf("could not refresh lsn after wal message: %w", err)
