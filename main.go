@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"github.com/brunoscheufler/lode/replication"
-	"github.com/brunoscheufler/lode/server"
 	"github.com/jackc/pgx"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -39,7 +38,7 @@ func main() {
 
 	log.Debugf("Established replication pg connection")
 
-	log.Infof("Connected to Postgres instance, dropping existing replication slots")
+	log.Infof("Connected to Postgres instance, setting up replication")
 
 	slotName, state, err := replication.Setup(pgConn, replConn)
 	if err != nil {
@@ -50,16 +49,39 @@ func main() {
 	rootCtx := context.Background()
 	streamCtx, cancel := context.WithCancel(rootCtx)
 
-	internalServer := server.LaunchInternalServer(cancel)
-
-	err = replication.StreamChanges(streamCtx, replConn, slotName, state)
-	if err != nil {
-		log.Errorf("Could not stream changes: %s", err.Error())
+	server := &http.Server{
+		// TODO Make dynamic
+		Addr: ":8080",
 	}
 
-	err = internalServer.Shutdown(rootCtx)
+	http.HandleFunc("/shutdown", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			_, _ = writer.Write([]byte(http.StatusText(http.StatusMethodNotAllowed)))
+			return
+		}
+
+		cancel()
+		writer.WriteHeader(http.StatusOK)
+		_, _ = writer.Write([]byte(http.StatusText(http.StatusOK)))
+	})
+
+	go func() {
+		err := replication.StreamChanges(streamCtx, replConn, slotName, state)
+		if err != nil {
+			log.Errorf("Could not stream changes: %s", err.Error())
+		}
+
+		err = server.Shutdown(rootCtx)
+		if err != nil && err != http.ErrServerClosed {
+			log.Errorf("Could not shutdown server: %s", err.Error())
+		}
+	}()
+
+	err = server.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
-		log.Errorf("Could not shutdown server: %s", err.Error())
+		log.Errorf("Could not run server: %s", err.Error())
+		cancel()
 	}
 
 	// Shut down both connections gracefully before exiting

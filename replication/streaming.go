@@ -25,7 +25,7 @@ func StreamChanges(ctx context.Context, replConn *pgx.ReplicationConn, slotName 
 	}
 
 	// Start replication on replication slot
-	err := replConn.StartReplication(slotName, state.InitialRestartLSN, -1, wal2JsonPluginOptions...)
+	err := replConn.StartReplication(slotName, state.CurrentLSN, -1, wal2JsonPluginOptions...)
 	if err != nil {
 		return fmt.Errorf("could not start replication: %w", err)
 	}

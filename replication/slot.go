@@ -12,75 +12,78 @@ const SlotPrefix string = "lode"
 const StandbyStatusInterval = 10 * time.Second
 
 type State struct {
-	CurrentLSN        uint64
-	InitialRestartLSN uint64
+	CurrentLSN uint64
 }
 
 func Setup(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) (string, *State, error) {
-	// Drop all existing lode replication slots
-	err := dropExistingReplicationSlots(pgConn, replConn)
+	slotName := fmt.Sprintf("%s_main", SlotPrefix)
+
+	initialLSN, err := fetchReplicationSlot(pgConn, slotName)
 	if err != nil {
-		return "", nil, fmt.Errorf("could not drop existing replication slots: %w", err)
+		return "", nil, fmt.Errorf("could not fetch replication slot: %w", err)
 	}
 
-	log.Infof("Dropped existing replication slots!")
+	if initialLSN == 0 {
+		// Create replication slot
+		initialLSN, err = createReplicationSlot(slotName, replConn)
+		if err != nil {
+			return "", nil, fmt.Errorf("could not initialize replication slot: %w", err)
+		}
 
-	// Create replication slot
-	slotName := fmt.Sprintf("%s_main", SlotPrefix)
-	lsn, snapshotName, err := initializeReplicationSlot(slotName, replConn)
-	if err != nil {
-		return "", nil, fmt.Errorf("could not initialize replication slot: %w", err)
+		log.WithFields(log.Fields{
+			"lsn":      initialLSN,
+			"slotName": slotName,
+		}).Infof("Created wal2json replication slot")
 	}
 
 	log.WithFields(log.Fields{
-		"lsn":          lsn,
-		"snapshotName": snapshotName,
-		"slotName":     slotName,
-	}).Infof("Created wal2json replication slot")
+		"lsn":      pgx.FormatLSN(initialLSN),
+		"slotName": slotName,
+	}).Infof("Set up replication slot")
 
 	return slotName, &State{
-		CurrentLSN:        lsn,
-		InitialRestartLSN: lsn,
+		CurrentLSN: initialLSN,
 	}, nil
 }
 
-func dropExistingReplicationSlots(pgConn *pgx.Conn, replConn *pgx.ReplicationConn) error {
-	// Fetch all replication slots that contain prefix
-	rows, err := pgConn.Query("SELECT slot_name FROM pg_replication_slots WHERE slot_name LIKE $1;", fmt.Sprintf("%s%%", SlotPrefix))
-	if err != nil {
-		return fmt.Errorf("could not query for replication slots: %w", err)
-	}
-
-	// Iterate over returned rows
-	for rows.Next() {
-		// Fetch slot name out of row
-		var slotName string
-		err := rows.Scan(&slotName)
-		if err != nil {
-			return fmt.Errorf("could not scan slot name: %w", err)
-		}
-
-		// Drop relication slot
-		err = replConn.DropReplicationSlot(slotName)
-		if err != nil {
-			return fmt.Errorf("could not delete replication slot %q: %w", slotName, err)
-		}
-	}
-
-	return nil
-}
-
-func initializeReplicationSlot(slotName string, replConn *pgx.ReplicationConn) (uint64, string, error) {
+func createReplicationSlot(slotName string, replConn *pgx.ReplicationConn) (uint64, error) {
 	// Create wal2json replication slot and return consistent point + snapshot name
-	consistentPoint, snapshotName, err := replConn.CreateReplicationSlotEx(slotName, "wal2json")
+	consistentPoint, _, err := replConn.CreateReplicationSlotEx(slotName, "wal2json")
 	if err != nil {
-		return 0, "", fmt.Errorf("could not create")
+		return 0, fmt.Errorf("could not create")
 	}
 
 	// Parse LSN from consistent point
 	lsn, err := pgx.ParseLSN(consistentPoint)
 
-	return lsn, snapshotName, nil
+	return lsn, nil
+}
+
+func fetchReplicationSlot(pgConn *pgx.Conn, slotName string) (uint64, error) {
+	// Fetch restart_lsn from replication slot
+	rows, err := pgConn.Query("SELECT restart_lsn FROM pg_replication_slots WHERE slot_name = $1;", slotName)
+	if err != nil {
+		return 0, fmt.Errorf("could not query for replication slots: %w", err)
+	}
+
+	// Iterate over returned rows
+	for rows.Next() {
+		// Fetch restart LSN out of row
+		var restartLsn string
+		err := rows.Scan(&restartLsn)
+		if err != nil {
+			return 0, fmt.Errorf("could not scan slot name: %w", err)
+		}
+
+		startLsn, err := pgx.ParseLSN(restartLsn)
+		if err != nil {
+			return 0, fmt.Errorf("could not parse restart LSN: %w", err)
+		}
+
+		return startLsn, nil
+	}
+
+	return 0, nil
 }
 
 // send Postgres standby status (heartbeat) to keep
