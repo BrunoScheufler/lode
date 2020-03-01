@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SlotPrefix string = "lode"
+const DefaultSlotName = "lode_main"
 const StandbyStatusInterval = 10 * time.Second
 
 type State struct {
@@ -16,7 +16,7 @@ type State struct {
 }
 
 func Setup(logger *logrus.Logger, pgConn *pgx.Conn, replConn *pgx.ReplicationConn, slotNameOverride string) (string, *State, error) {
-	slotName := fmt.Sprintf("%s_main", SlotPrefix)
+	slotName := DefaultSlotName
 	if slotNameOverride != "" {
 		slotName = slotNameOverride
 	}
@@ -49,6 +49,8 @@ func Setup(logger *logrus.Logger, pgConn *pgx.Conn, replConn *pgx.ReplicationCon
 	}, nil
 }
 
+// Create new replication slot using wal2json output plugin and preset slotName,
+// returning the initial LSN (consistent point) to start streaming with
 func createReplicationSlot(slotName string, replConn *pgx.ReplicationConn) (uint64, error) {
 	// Create wal2json replication slot and return consistent point + snapshot name
 	consistentPoint, _, err := replConn.CreateReplicationSlotEx(slotName, "wal2json")
@@ -62,6 +64,7 @@ func createReplicationSlot(slotName string, replConn *pgx.ReplicationConn) (uint
 	return lsn, nil
 }
 
+// Retrieve replication slot restart_lsn by name, returns 0 if no results are returned
 func fetchReplicationSlot(pgConn *pgx.Conn, slotName string) (uint64, error) {
 	// Fetch restart_lsn from replication slot
 	rows, err := pgConn.Query("SELECT restart_lsn FROM pg_replication_slots WHERE slot_name = $1;", slotName)
@@ -94,8 +97,10 @@ func fetchReplicationSlot(pgConn *pgx.Conn, slotName string) (uint64, error) {
 func sendReplicationHeartbeat(logger *logrus.Logger, ctx context.Context, replConn *pgx.ReplicationConn, state *State) error {
 	for {
 		select {
+		// when context is closed, return immediately
 		case <-ctx.Done():
 			return nil
+		// otherwise send heartbeat in interval
 		case <-time.After(StandbyStatusInterval):
 			// send standby status with current lsn
 			err := sendStandbyStatus(logger, replConn, state)

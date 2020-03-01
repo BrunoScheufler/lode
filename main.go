@@ -37,7 +37,10 @@ func Create(configuration Configuration) (<-chan ExitResult, context.CancelFunc,
 	logger := configuration.Logger
 	if logger == nil {
 		logger = logrus.New()
-		logger.SetLevel(configuration.LogLevel)
+
+		if configuration.LogLevel != 0 {
+			logger.SetLevel(configuration.LogLevel)
+		}
 	}
 
 	// Parse connection string to config

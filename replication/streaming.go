@@ -13,6 +13,12 @@ type WALPayload struct {
 	NextLSN string `json:"nextlsn"`
 }
 
+// Starts streaming changes on given replication slot
+// using replication connection
+// Takes in cancellable context that will stop the
+// streaming process when cancelled
+// Takes in onMessage handler function that will
+// process WalMessages received by the streaming process
 func StreamChanges(
 	logger *logrus.Logger,
 	ctx context.Context,
@@ -38,6 +44,7 @@ func StreamChanges(
 		return fmt.Errorf("could not start replication: %w", err)
 	}
 
+	// Start sending heartbeats to the server to keep on streaming
 	go func() {
 		err := sendReplicationHeartbeat(logger, ctx, replConn, state)
 		if err != nil {
@@ -48,20 +55,26 @@ func StreamChanges(
 
 	logger.Tracef("Now streaming changes and waiting for WAL messages")
 
+	// Listen for incoming WAL messages until context
+	// is cancelled or replication connection dies
 	for {
+		// Check if context was cancelled
 		if ctx.Err() == context.Canceled {
 			return nil
 		}
 
+		// Check replication connection health
 		if !replConn.IsAlive() {
 			return fmt.Errorf("replication connection unhealthy: %w", replConn.CauseOfDeath())
 		}
 
+		// Wait for incoming replication messages, pass in cancellable context
 		message, err := replConn.WaitForReplicationMessage(ctx)
 		if err != nil {
 			return fmt.Errorf("could not wait for replication message: %w", err)
 		}
 
+		// Handle server heartbeats, respond if asked to
 		serverHeartbeat := message.ServerHeartbeat
 		if serverHeartbeat != nil {
 			logger.Tracef("Got server heartbeat: %s", serverHeartbeat.String())
@@ -75,6 +88,7 @@ func StreamChanges(
 			}
 		}
 
+		// Handle WAL messages
 		walMessage := message.WalMessage
 		if walMessage == nil {
 			continue
