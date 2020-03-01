@@ -1,6 +1,8 @@
 # lode
 
-> A service to build tools based on Postgres change-streaming
+[![godoc](https://godoc.org/github.com/brunoscheufler/lode?status.svg)](https://godoc.org/github.com/brunoscheufler/lode)
+
+> A toolkit to build infrastructure around real-time Postgres change-streaming
 
 ## about lode
 
@@ -43,7 +45,7 @@ each item. Let's assume you're running Postgres on your machine, as explained ab
 
 ### configuration
 
-Visit the [godoc](github.com/brunoscheufler/lode) to learn about possible configuration methods.
+Visit the [godoc](https://godoc.org/github.com/brunoscheufler/lode) to learn about possible configuration methods.
 
 ### basic WAL streaming
 
@@ -137,7 +139,7 @@ func main (){
 
 ### reading the payload
 
-Since we use [wal2json](https://github.com/eulerto/wal2json) as the output plugin for lode, all messages we receive are in the wal2json format (format version 1).
+Since we use [wal2json](https://github.com/eulerto/wal2json) as the output plugin for lode, all messages we receive are in the wal2json format (version 1).
 
 #### notes on replica identity
 
