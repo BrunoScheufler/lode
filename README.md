@@ -7,7 +7,7 @@
 Lode (abbreviation for `logical decoding`, based on the [Postgres feature](https://www.postgresql.org/docs/current/logicaldecoding.html) it uses under the hood),
 is a long-running service which receives a continuous change stream from your Postgres instance and allows you to build custom functionality around it. This equips
 Postgres with powerful real-time abilities in addition to [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html), which is often used for sending
-messages across services, or automating similar workflows to what lode is built for.
+messages across services, or automating similar workflows to what lode is built for. Lode was heavily inspired by [pgdeltastream](https://github.com/hasura/pgdeltastream).
 
 ## background information
 
@@ -42,19 +42,17 @@ TBA
 ```go
 ```
 
-## debugging
+### message kinds
 
-To check the current WAL state it can be helpful to see differences in the database state and your replication slot,
-especially when restarting and trying to resend changes that happened while lode wasn't listening. An example query
-to calculate differences between the current WAL LSN and the slot's last checkpoint is added below.
+Since we use wal2json as the output plugin for lode, all messages we receive are in the wal2json format (format version 1).
+
+#### `update`
+
+By default, update operations only show old keys and changes to those columns, if you want to send _all_ columns to generate
+a diff of previous values to current values (to see what changed in an UPDATE operation), you need to alter the [replica identity](https://www.postgresql.org/docs/current/logical-replication-publication.html)
+of each table you want to diff. An [issue](https://github.com/eulerto/wal2json/issues/7) in the wal2json repository covers the
+expected and default behaviour. To switch a table's replica identity, run
 
 ```sql
-WITH "slot" AS (
-  SELECT * FROM pg_replication_slots WHERE slot_name = '<lode slot name>'
-) SELECT
-  pg_wal_lsn_diff(slot.restart_lsn, pg_current_wal_lsn()) AS slot_current_diff,
-  slot.restart_lsn AS restart_lsn,
-  slot.confirmed_flush_lsn AS "confirmed_flush_lsn",
-  pg_current_wal_lsn() AS "current_lsn"
-FROM "slot";
-```
+ALTER TABLE "<your table>" REPLICA IDENTITY FULL;
+``` 

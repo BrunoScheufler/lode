@@ -16,6 +16,9 @@ type Configuration struct {
 	// Will default to "lode_main"
 	SlotName string
 
+	// Handle incoming WAL message
+	OnMessage func(*pgx.WalMessage)
+
 	// Pass existing logger instance
 	Logger *logrus.Logger
 
@@ -74,7 +77,7 @@ func Create(configuration Configuration) (<-chan ExitResult, context.CancelFunc,
 
 	// Stream changes asynchronously until the context is cancelled or something bad happens
 	go func() {
-		streamErr := replication.StreamChanges(logger, streamCtx, replConn, slotName, state)
+		streamErr := replication.StreamChanges(logger, streamCtx, replConn, slotName, state, configuration.OnMessage)
 		if streamErr != nil {
 			logger.Errorf("Could not stream changes: %s", streamErr.Error())
 		}

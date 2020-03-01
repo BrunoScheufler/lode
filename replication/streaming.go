@@ -6,13 +6,21 @@ import (
 	"fmt"
 	"github.com/jackc/pgx"
 	"github.com/sirupsen/logrus"
+	"time"
 )
 
 type WALPayload struct {
 	NextLSN string `json:"nextlsn"`
 }
 
-func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.ReplicationConn, slotName string, state *State) error {
+func StreamChanges(
+	logger *logrus.Logger,
+	ctx context.Context,
+	replConn *pgx.ReplicationConn,
+	slotName string,
+	state *State,
+	onMessage func(*pgx.WalMessage),
+) error {
 	// Options for wal2json (as documented here https://github.com/eulerto/wal2json#parameters)
 	wal2JsonPluginOptions := []string{
 		// Include "nextlsn" field in payload so we can update our state
@@ -74,7 +82,23 @@ func StreamChanges(logger *logrus.Logger, ctx context.Context, replConn *pgx.Rep
 
 		logger.Tracef("Got WAL message: %s", walMessage.String())
 
-		// TODO Add hook support
+		// Handle onMessage hook if supplied
+		if onMessage != nil {
+			logger.Tracef("Starting onMessage hook")
+			start := time.Now()
+
+			// Run onMessage hook
+			onMessage(walMessage)
+
+			d := time.Since(start)
+			logger.WithField("duration", d.String()).Tracef("Completed onMessage hook in %s", d.String())
+
+			// Warn user in debug mode when handler takes more than a second to complete
+			if d > time.Second*1 {
+				logger.Debugf("Handler took longer than one second to complete!" + " " +
+					"Please make sure that your handlers don't take up too much time, otherwise we can't process the queue in real-time.")
+			}
+		}
 
 		// Unmarshal WAL message data to access "nextlsn" field of wal2json
 		var payload WALPayload
