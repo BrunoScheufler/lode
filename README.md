@@ -1,3 +1,5 @@
+![header](./media/header.png)
+
 # lode
 
 [![godoc](https://godoc.org/github.com/brunoscheufler/lode?status.svg)](https://godoc.org/github.com/brunoscheufler/lode)
@@ -21,7 +23,7 @@ which will result in a perfect copy.
 `lode` will register or reuse an existing logical replication slot with [wal2json](https://github.com/eulerto/wal2json) configured as its output plugin, which allows capturing missed events,
 in case of potential downtime. After initializing, it'll listen for changes in your database, such as `INSERTs`, `UPDATEs` or whatever else might be happening. When changes
 are made, lode allows you to hook into the lifecycle and perform stream-processing workloads, after which it will acknowledge the message and let Postgres know not to resend it.
-Due to the nature of streams, it's recommended to spend as little time as possible on processing each message, as you would otherwise end up with a never-ending queue of unprocessed items. 
+Due to the nature of streams, it's recommended to spend as little time as possible on processing each message, as you would otherwise end up with a never-ending queue of unprocessed items.
 
 ## prerequisites
 
@@ -31,7 +33,7 @@ You will need a Postgres instance with the following configuration at your dispo
 - [ ] `wal_level` set to `logical` (required for logical decoding)
 - [ ] `max_replication_slots` set to more than one (or greater than equals the number of replication slots used)
 
-To get a compatible database instance up and running quickly, you can start a Docker container running the [Debezium Postgres](https://hub.docker.com/r/debezium/postgres) image, started with 
+To get a compatible database instance up and running quickly, you can start a Docker container running the [Debezium Postgres](https://hub.docker.com/r/debezium/postgres) image, started with
 
 ```bash
 docker run -e POSTGRES_PASSWORD=<password> -it -p 5432:5432 debezium/postgres:12-alpine
@@ -161,6 +163,6 @@ expected and default behavior. To switch a table's replica identity, run
 
 ```sql
 ALTER TABLE "<your table>" REPLICA IDENTITY FULL;
-``` 
+```
 
 To reset the replica identity, simply run the same query above and set it to `DEFAULT` instead of `FULL`.
