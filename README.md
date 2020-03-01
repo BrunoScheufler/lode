@@ -37,9 +37,93 @@ docker run -e POSTGRES_PASSWORD=<password for "postgres" user> -it -p 5432:5432 
 
 ## getting started
 
-TBA
+It takes less than five minutes to set up a streaming server to listen for Postgres changes and process
+each item. You can use `lode` with Go modules by installing `github.com/brunoscheufler/lode`.
+
+### basic WAL streaming
 
 ```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/brunoscheufler/lode"
+	"github.com/brunoscheufler/lode/parser"
+	"github.com/jackc/pgx"
+	"github.com/sirupsen/logrus"
+)
+
+func main (){
+	done, _, err := lode.Create(lode.Configuration{
+		// Connect to local Postgres container
+		ConnectionString: "postgresql://postgres:password@localhost:5432/postgres",
+
+		// Handle incoming WAL messages
+		OnMessage: func(message *pgx.WalMessage) error {
+			// Decode wal2json payload
+			payload, err := parser.ParseWal2JsonPayload(message.WalData)
+			if err != nil {
+				return fmt.Errorf("could not parse wal2json payload: %w", err)
+			}
+
+			// Process each change
+			for _, change := range payload.Change {
+				logrus.Infof("Got %s change in %q.%q", change.Kind, change.Schema, change.Table)
+
+				// TODO Handle change
+			}
+
+			return nil
+		},
+	})
+
+	// Handle startup errors
+	if err != nil {
+		panic(err)
+	}
+
+	// Wait until lode stops streaming (error cases, manual shutdown)
+	result := <- done
+
+	// Check if stream failed (exclude manual shutdowns which return context cancellation error)
+	if result.Error != nil && errors.Is(result.Error, context.Canceled) {
+		panic(err)
+	}
+}
+```
+
+### adding interactive cancellation
+
+You can alter the previous example slightly to use the `cancel` function exposed by `Create`
+
+```go
+func main (){
+	done, cancel, err := lode.Create(lode.Configuration{
+		// same as in the example above
+	})
+
+	// Handle startup errors
+	if err != nil {
+		panic(err)
+	}
+	
+    // Shut down server after ten seconds
+	go func() {
+		<-time.After(10 * time.Second)
+		
+		cancel()
+	}()
+
+	// Wait until lode stops streaming (error cases, manual shutdown)
+	result := <- done
+
+	// Check if stream failed (exclude manual shutdowns which return context cancellation error)
+	if result.Error != nil && errors.Is(result.Error, context.Canceled) {
+		panic(err)
+	}
+}
 ```
 
 ### message kinds
