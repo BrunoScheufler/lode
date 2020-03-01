@@ -1,0 +1,29 @@
+(*parser.Wal2JsonMessage)({
+  NextLSN: (string) (len=9) "0/177A8A8",
+  Timestamp: (string) (len=29) "2020-03-01 12:02:12.577505+00",
+  Change: ([]parser.Wal2JsonChange) (len=1) {
+    (parser.Wal2JsonChange) {
+      Kind: (string) (len=6) "delete",
+      Schema: (string) (len=6) "public",
+      Table: (string) (len=4) "user",
+      ColumnNames: ([]string) <nil>,
+      ColumnTypes: ([]string) <nil>,
+      ColumnTypeOIDs: ([]float64) <nil>,
+      ColumnValues: ([]interface {}) <nil>,
+      OldKeys: (struct { KeyNames []string "json:\"keynames\""; KeyTypes []string "json:\"keytypes\""; KeyTypeOIDs []float64 "json:\"keytypeoids\""; KeyValues []interface {} "json:\"keyvalues\"" }) {
+        KeyNames: ([]string) (len=1) {
+          (string) (len=2) "id"
+        },
+        KeyTypes: ([]string) (len=1) {
+          (string) (len=7) "integer"
+        },
+        KeyTypeOIDs: ([]float64) (len=1) {
+          (float64) 23
+        },
+        KeyValues: ([]interface {}) (len=1) {
+          (float64) 1
+        }
+      }
+    }
+  }
+})

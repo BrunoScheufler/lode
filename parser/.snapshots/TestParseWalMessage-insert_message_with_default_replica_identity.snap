@@ -1,0 +1,41 @@
+(*parser.Wal2JsonMessage)({
+  NextLSN: (string) (len=9) "0/177AA68",
+  Timestamp: (string) (len=29) "2020-03-01 12:02:47.530709+00",
+  Change: ([]parser.Wal2JsonChange) (len=1) {
+    (parser.Wal2JsonChange) {
+      Kind: (string) (len=6) "insert",
+      Schema: (string) (len=6) "public",
+      Table: (string) (len=4) "user",
+      ColumnNames: ([]string) (len=4) {
+        (string) (len=2) "id",
+        (string) (len=4) "name",
+        (string) (len=5) "email",
+        (string) (len=3) "bio"
+      },
+      ColumnTypes: ([]string) (len=4) {
+        (string) (len=7) "integer",
+        (string) (len=21) "character varying(32)",
+        (string) (len=21) "character varying(32)",
+        (string) (len=4) "text"
+      },
+      ColumnTypeOIDs: ([]float64) (len=4) {
+        (float64) 23,
+        (float64) 1043,
+        (float64) 1043,
+        (float64) 25
+      },
+      ColumnValues: ([]interface {}) (len=4) {
+        (float64) 2,
+        (string) (len=5) "bruno",
+        (string) (len=24) "bruno@brunoscheufler.com",
+        (string) (len=11) "hello world"
+      },
+      OldKeys: (struct { KeyNames []string "json:\"keynames\""; KeyTypes []string "json:\"keytypes\""; KeyTypeOIDs []float64 "json:\"keytypeoids\""; KeyValues []interface {} "json:\"keyvalues\"" }) {
+        KeyNames: ([]string) <nil>,
+        KeyTypes: ([]string) <nil>,
+        KeyTypeOIDs: ([]float64) <nil>,
+        KeyValues: ([]interface {}) <nil>
+      }
+    }
+  }
+})
