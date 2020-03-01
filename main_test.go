@@ -3,7 +3,7 @@ package lode
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx"
+	"github.com/brunoscheufler/lode/parser"
 	"testing"
 	"time"
 )
@@ -12,8 +12,8 @@ func TestCreate(t *testing.T) {
 	// Create and launch lode instance
 	done, cancel, err := Create(Configuration{
 		ConnectionString: "postgresql://postgres:password@localhost:5432/postgres",
-		OnMessage: func(message *pgx.WalMessage) error {
-			t.Logf("Got WAL message %s", message.String())
+		OnMessage: func(message *parser.Wal2JsonMessage) error {
+			t.Logf("Got WAL message at position %q", message.NextLSN)
 			return nil
 		},
 	})

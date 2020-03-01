@@ -14,12 +14,12 @@ messages across services, or automating similar workflows to what lode is built 
 ## background information
 
 Postgres keeps track of all transactions in a so-called [write-ahead log](https://www.postgresql.org/docs/current/wal-intro.html), WAL in short. Used for recovery and internal
-maintenance tasks, it can also function as a change feed for replication in clusters of connected database instances, or for point-in-time recovery. [Logical decoding](https://www.postgresql.org/docs/current/logicaldecoding.html)
+maintenance tasks, it can also function as a change feed for replication in clusters of connected database instances, or point-in-time recovery. [Logical decoding](https://www.postgresql.org/docs/current/logicaldecoding.html)
 is a method to allow subscribers to keep their own replication state of a database, starting with a snapshot of the complete data set and then applying changes to it as they come in,
 which will result in a perfect copy.
 
-`lode` will register or reuse an existing logical replication slot with [wal2json](https://github.com/eulerto/wal2json) configured as its output plugin, which allows to capture missed events,
-in case of a potential downtime. After initializing, it'll listen for changes in your database, such as `INSERTs`, `UPDATEs` or whatever else might be happening. When changes
+`lode` will register or reuse an existing logical replication slot with [wal2json](https://github.com/eulerto/wal2json) configured as its output plugin, which allows capturing missed events,
+in case of potential downtime. After initializing, it'll listen for changes in your database, such as `INSERTs`, `UPDATEs` or whatever else might be happening. When changes
 are made, lode allows you to hook into the lifecycle and perform stream-processing workloads, after which it will acknowledge the message and let Postgres know not to resend it.
 Due to the nature of streams, it's recommended to spend as little time as possible on processing each message, as you would otherwise end up with a never-ending queue of unprocessed items. 
 
@@ -57,10 +57,8 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"github.com/brunoscheufler/lode"
 	"github.com/brunoscheufler/lode/parser"
-	"github.com/jackc/pgx"
 	"github.com/sirupsen/logrus"
 )
 
@@ -73,13 +71,7 @@ func main() {
 		ConnectionString: connStr,
 
 		// Handle incoming WAL messages
-		OnMessage: func(message *pgx.WalMessage) error {
-			// Decode wal2json payload
-			payload, err := parser.ParseWal2JsonPayload(message.WalData)
-			if err != nil {
-				return fmt.Errorf("could not parse wal2json payload: %w", err)
-			}
-
+		OnMessage: func(payload *parser.Wal2JsonMessage) error {
 			// Process each change
 			for _, change := range payload.Change {
 				logrus.Infof(
@@ -157,13 +149,15 @@ func main() {
 ### reading the payload
 
 Since we use [wal2json](https://github.com/eulerto/wal2json) as the output plugin for lode, all messages we receive are in the wal2json format (version 1).
+`lode` includes a simple [`parser` package](https://godoc.org/github.com/brunoscheufler/lode/parser) for converting the raw WAL data into a typed struct,
+which is used to decode incoming message payloads.
 
 #### notes on replica identity
 
 By default, all non-creating (so `UPDATE`, `DELETE`) operations only show old keys and changes to those columns. If you want to receive _all_ columns to generate
 a diff of previous values to current values (to see what changed in an operation), you need to alter the [replica identity](https://www.postgresql.org/docs/current/logical-replication-publication.html)
-of each table you want to diff. An [issue](https://github.com/eulerto/wal2json/issues/7) in the wal2json repository covers the
-expected and default behaviour. To switch a table's replica identity, run
+of each table, you want to diff. An [issue](https://github.com/eulerto/wal2json/issues/7) in the wal2json repository covers the
+expected and default behavior. To switch a table's replica identity, run
 
 ```sql
 ALTER TABLE "<your table>" REPLICA IDENTITY FULL;

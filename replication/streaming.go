@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/brunoscheufler/lode/parser"
 	"github.com/jackc/pgx"
 	"github.com/sirupsen/logrus"
 	"time"
@@ -28,7 +29,7 @@ func StreamChanges(
 	replConn *pgx.ReplicationConn,
 	slotName string,
 	state *State,
-	onMessage func(*pgx.WalMessage) error,
+	onMessage func(*parser.Wal2JsonMessage) error,
 ) error {
 	// Options for wal2json (as documented here https://github.com/eulerto/wal2json#parameters)
 	wal2JsonPluginOptions := []string{
@@ -105,8 +106,14 @@ func StreamChanges(
 			logger.Tracef("Starting onMessage hook")
 			start := time.Now()
 
+			// Parse wal2json payload from WAL Data
+			walPayload, err := parser.ParseWal2JsonPayload(walMessage.WalData)
+			if err != nil {
+				return fmt.Errorf("could not parse wal2json payload: %w", err)
+			}
+
 			// Run onMessage handler
-			err := onMessage(walMessage)
+			err = onMessage(walPayload)
 			if err != nil {
 				return fmt.Errorf("could not complete onMessage handler: %w", err)
 			}

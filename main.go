@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/brunoscheufler/lode/parser"
 	"github.com/brunoscheufler/lode/replication"
 	"github.com/jackc/pgx"
 	"github.com/sirupsen/logrus"
@@ -18,7 +19,7 @@ type Configuration struct {
 	SlotName string
 
 	// Handle incoming WAL message
-	OnMessage func(*pgx.WalMessage) error
+	OnMessage func(message *parser.Wal2JsonMessage) error
 
 	// Pass existing logger instance
 	Logger *logrus.Logger
