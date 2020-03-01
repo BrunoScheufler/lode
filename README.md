@@ -13,6 +13,8 @@ is a long-running service which receives a continuous change stream from your Po
 Postgres with powerful real-time abilities in addition to [`LISTEN/NOTIFY`](https://www.postgresql.org/docs/current/sql-notify.html), which is often used for sending
 messages across services, or automating similar workflows to what lode is built for. `lode` was heavily inspired by [pgdeltastream](https://github.com/hasura/pgdeltastream).
 
+Read the official announcement post [🔗 here](https://brunoscheufler.com/blog/2020-03-01-real-time-postgres-change-streaming-with-lode)!
+
 ## background information
 
 Postgres keeps track of all transactions in a so-called [write-ahead log](https://www.postgresql.org/docs/current/wal-intro.html), WAL in short. Used for recovery and internal
@@ -166,3 +168,8 @@ ALTER TABLE "<your table>" REPLICA IDENTITY FULL;
 ```
 
 To reset the replica identity, simply run the same query above and set it to `DEFAULT` instead of `FULL`.
+
+## improvement & roadmap
+
+- [ ] Replace replication & streaming internals with updated [pglogrepl](https://github.com/jackc/pglogrepl) implementation
+- [ ] Upgrade [pgx](https://github.com/jackc/pgx) core to v4
