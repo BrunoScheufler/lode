@@ -19,13 +19,15 @@ type WALPayload struct {
 // streaming process when cancelled
 // Takes in onMessage handler function that will
 // process WalMessages received by the streaming process
+// and optionally return an error to stop streaming
+// when an unexpected event happens
 func StreamChanges(
 	logger *logrus.Logger,
 	ctx context.Context,
 	replConn *pgx.ReplicationConn,
 	slotName string,
 	state *State,
-	onMessage func(*pgx.WalMessage),
+	onMessage func(*pgx.WalMessage) error,
 ) error {
 	// Options for wal2json (as documented here https://github.com/eulerto/wal2json#parameters)
 	wal2JsonPluginOptions := []string{
@@ -101,8 +103,11 @@ func StreamChanges(
 			logger.Tracef("Starting onMessage hook")
 			start := time.Now()
 
-			// Run onMessage hook
-			onMessage(walMessage)
+			// Run onMessage handler
+			err := onMessage(walMessage)
+			if err != nil {
+				return fmt.Errorf("could not complete onMessage handler: %w", err)
+			}
 
 			d := time.Since(start)
 			logger.WithField("duration", d.String()).Tracef("Completed onMessage hook in %s", d.String())

@@ -3,7 +3,7 @@ package lode
 import (
 	"context"
 	"errors"
-	"github.com/sirupsen/logrus"
+	"github.com/jackc/pgx"
 	"testing"
 	"time"
 )
@@ -11,8 +11,11 @@ import (
 func TestCreate(t *testing.T) {
 	// Create and launch lode instance
 	done, cancel, err := Create(Configuration{
-		LogLevel:         logrus.TraceLevel,
 		ConnectionString: "postgresql://postgres:password@localhost:5432/postgres",
+		OnMessage: func(message *pgx.WalMessage) error {
+			t.Logf("Got WAL message %s", message.String())
+			return nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("failed to create: %s", err.Error())

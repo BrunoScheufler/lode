@@ -17,7 +17,7 @@ type Configuration struct {
 	SlotName string
 
 	// Handle incoming WAL message
-	OnMessage func(*pgx.WalMessage)
+	OnMessage func(*pgx.WalMessage) error
 
 	// Pass existing logger instance
 	Logger *logrus.Logger
