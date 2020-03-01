@@ -27,11 +27,11 @@ Due to the nature of streams, it's recommended to spend as little time as possib
 
 You will need a Postgres instance with the following configuration at your disposal:
 
-- [ ] [`wal2json`](https://github.com/eulerto/wal2json) available 
-- [ ] `wal_level` set to `logical`
+- [ ] [`wal2json`](https://github.com/eulerto/wal2json) should be available (test query: `SELECT * FROM pg_create_logical_replication_slot('test', 'wal2json');`)
+- [ ] `wal_level` set to `logical` (required for logical decoding)
 - [ ] `max_replication_slots` set to more than one (or greater than equals the number of replication slots used)
 
-To get a compatible database instance up and running quickly, you can start a Docker container running `debezium/postgres:12-alpine`, started with 
+To get a compatible database instance up and running quickly, you can start a Docker container running the [Debezium Postgres](https://hub.docker.com/r/debezium/postgres) image, started with 
 
 ```bash
 docker run -e POSTGRES_PASSWORD=<password> -it -p 5432:5432 debezium/postgres:12-alpine
@@ -65,9 +65,12 @@ import (
 )
 
 func main (){
+    // TODO Load this from your environment
+    connStr := "postgresql://postgres:<password set earlier>@localhost:5432/postgres"
+
 	done, _, err := lode.Create(lode.Configuration{
 		// Connect to local Postgres container
-		ConnectionString: "postgresql://postgres:<password set earlier>@localhost:5432/postgres",
+		ConnectionString: connStr,
 
 		// Handle incoming WAL messages
 		OnMessage: func(message *pgx.WalMessage) error {
@@ -79,7 +82,12 @@ func main (){
 
 			// Process each change
 			for _, change := range payload.Change {
-				logrus.Infof("Got %s change in %q.%q", change.Kind, change.Schema, change.Table)
+				logrus.Infof(
+                    "Got %s change in %q.%q",
+                    change.Kind,
+                    change.Schema,
+                    change.Table,
+                )
 
 				// TODO Handle change
 			}
