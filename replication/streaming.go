@@ -3,6 +3,7 @@ package replication
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/jackc/pgx"
 	"github.com/sirupsen/logrus"
@@ -46,12 +47,18 @@ func StreamChanges(
 		return fmt.Errorf("could not start replication: %w", err)
 	}
 
+	// Cancellable context used for closing all
+	// pending operations when heartbeat is failing
+	heartbeatShutdownCtx, cancel := context.WithCancel(ctx)
+
 	// Start sending heartbeats to the server to keep on streaming
 	go func() {
 		err := sendReplicationHeartbeat(logger, ctx, replConn, state)
-		if err != nil {
-			// TODO Shut down with error
+		if err != nil && !errors.Is(err, context.Canceled) {
 			logger.Errorf("Could not send replication heartbeat: %s", err.Error())
+
+			// Stop listening for changes if heartbeat failed
+			cancel()
 		}
 	}()
 
@@ -60,18 +67,13 @@ func StreamChanges(
 	// Listen for incoming WAL messages until context
 	// is cancelled or replication connection dies
 	for {
-		// Check if context was cancelled
-		if ctx.Err() == context.Canceled {
-			return nil
-		}
-
 		// Check replication connection health
 		if !replConn.IsAlive() {
 			return fmt.Errorf("replication connection unhealthy: %w", replConn.CauseOfDeath())
 		}
 
 		// Wait for incoming replication messages, pass in cancellable context
-		message, err := replConn.WaitForReplicationMessage(ctx)
+		message, err := replConn.WaitForReplicationMessage(heartbeatShutdownCtx)
 		if err != nil {
 			return fmt.Errorf("could not wait for replication message: %w", err)
 		}

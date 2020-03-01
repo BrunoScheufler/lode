@@ -99,7 +99,7 @@ func sendReplicationHeartbeat(logger *logrus.Logger, ctx context.Context, replCo
 		select {
 		// when context is closed, return immediately
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		// otherwise send heartbeat in interval
 		case <-time.After(StandbyStatusInterval):
 			// send standby status with current lsn

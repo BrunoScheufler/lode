@@ -2,6 +2,7 @@ package lode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/brunoscheufler/lode/replication"
 	"github.com/jackc/pgx"
@@ -81,7 +82,7 @@ func Create(configuration Configuration) (<-chan ExitResult, context.CancelFunc,
 	// Stream changes asynchronously until the context is cancelled or something bad happens
 	go func() {
 		streamErr := replication.StreamChanges(logger, streamCtx, replConn, slotName, state, configuration.OnMessage)
-		if streamErr != nil {
+		if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
 			logger.Errorf("Could not stream changes: %s", streamErr.Error())
 		}
 
