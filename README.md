@@ -64,9 +64,9 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func main (){
-    // TODO Load this from your environment
-    connStr := "postgresql://postgres:<password set earlier>@localhost:5432/postgres"
+func main() {
+	// TODO Load this from your environment
+	connStr := "postgresql://postgres:<password set earlier>@localhost:5432/postgres"
 
 	done, _, err := lode.Create(lode.Configuration{
 		// Connect to local Postgres container
@@ -83,11 +83,11 @@ func main (){
 			// Process each change
 			for _, change := range payload.Change {
 				logrus.Infof(
-                    "Got %s change in %q.%q",
-                    change.Kind,
-                    change.Schema,
-                    change.Table,
-                )
+					"Got %s change in %q.%q",
+					change.Kind,
+					change.Schema,
+					change.Table,
+				)
 
 				// TODO Handle change
 			}
@@ -102,7 +102,7 @@ func main (){
 	}
 
 	// Wait until lode stops streaming (error cases, manual shutdown)
-	result := <- done
+	result := <-done
 
 	// Check if stream failed (exclude manual shutdowns which return context cancellation error)
 	if result.Error != nil && errors.Is(result.Error, context.Canceled) {
@@ -118,25 +118,34 @@ to get the ability to shut down the streaming process whenever you want. This is
 if you're planning to run `lode` asynchronously.
 
 ```go
-func main (){
+package main
+
+import (
+	"context"
+	"errors"
+	"github.com/brunoscheufler/lode"
+	"time"
+)
+
+func main() {
 	done, cancel, err := lode.Create(lode.Configuration{
-        // same as in the example above
+		// same as in the example above
 	})
 
-    // Handle startup errors
+	// Handle startup errors
 	if err != nil {
 		panic(err)
 	}
-	
-    // Shut down server after ten seconds
+
+	// Shut down server after ten seconds
 	go func() {
-        <-time.After(10 * time.Second)
-		
-        cancel()
+		<-time.After(10 * time.Second)
+
+		cancel()
 	}()
 
 	// Wait until lode stops streaming (error cases, manual shutdown)
-	result := <- done
+	result := <-done
 
 	// Check if stream failed (exclude manual shutdowns which return context cancellation error)
 	if result.Error != nil && errors.Is(result.Error, context.Canceled) {
